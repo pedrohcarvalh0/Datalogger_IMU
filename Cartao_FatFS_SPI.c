@@ -58,6 +58,7 @@ static bool captura_ativa = false;
 static uint32_t contador_amostras = 0;
 static absolute_time_t tempo_inicio_gravacao;
 static char current_data_filename[32]; // Variável global para o nome do arquivo de dados
+static uint32_t next_recording_id = 1; // ID para o próximo arquivo de gravação
 
 // Display
 ssd1306_t ssd;
@@ -76,14 +77,13 @@ void play_sound(int frequency, int duration_ms);
 void beep_curto(void);
 void beep_duplo(void);
 static void mpu6050_reset(void);
-// ATUALIZADO: Removido temp do protótipo
 static void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3]);
 static sd_card_t *sd_get_by_name(const char *const name);
 static FATFS *sd_get_fs_by_name(const char *name);
+static void find_next_recording_id(void);
 bool montar_sd(void);
 bool desmontar_sd(void);
 bool criar_arquivo_csv(void);
-// ATUALIZADO: Removido temp do protótipo
 bool gravar_dados_imu(uint32_t sample_num, int16_t accel[3], int16_t gyro[3]);
 void atualizar_leds(void);
 void atualizar_display(void);
@@ -149,7 +149,6 @@ static void mpu6050_reset() {
     sleep_ms(10);
 }
 
-// ATUALIZADO: Removido temp do argumento
 static void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3]) {
     uint8_t buffer[6];
     
@@ -170,12 +169,6 @@ static void mpu6050_read_raw(int16_t accel[3], int16_t gyro[3]) {
     for (int i = 0; i < 3; i++) {
         gyro[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);
     }
-    
-    // ATUALIZADO: Removida leitura de temperatura
-    // val = 0x41;
-    // i2c_write_blocking(I2C_PORT_MPU, MPU6050_ADDR, &val, 1, true);
-    // i2c_read_blocking(I2C_PORT_MPU, MPU6050_ADDR, buffer, 2, false);
-    // *temp = buffer[0] << 8 | buffer[1];
 }
 
 // ========== FUNÇÕES DO CARTÃO SD ==========
@@ -192,6 +185,37 @@ static FATFS *sd_get_fs_by_name(const char *name) {
             return &sd_get_by_num(i)->fatfs;
     return NULL;
 }
+
+// Função para encontrar o próximo ID de gravação
+static void find_next_recording_id() {
+    FRESULT fr;
+    DIR dj;
+    FILINFO fno;
+    uint32_t max_id = 0;
+    char fname_buffer[FF_LFN_BUF]; // Buffer para nomes de arquivos longos
+
+    // Inicia a busca por arquivos no diretório raiz
+    fr = f_findfirst(&dj, &fno, "", "imu_data_*.csv");
+
+    while (fr == FR_OK && fno.fname[0]) {
+        // Verifica se é um arquivo e se corresponde ao padrão "imu_data_*.csv"
+        if (!(fno.fattrib & AM_DIR)) { // Se não for um diretório
+            uint32_t current_id;
+            // Tenta extrair o número do nome do arquivo
+            // Exemplo: "imu_data_123.csv"
+            if (sscanf(fno.fname, "imu_data_%lu.csv", &current_id) == 1) {
+                if (current_id > max_id) {
+                    max_id = current_id;
+                }
+            }
+        }
+        fr = f_findnext(&dj, &fno); // Próximo arquivo
+    }
+    f_closedir(&dj); // Fecha o diretório
+
+    next_recording_id = max_id + 1; // Define o próximo ID como o máximo encontrado + 1
+}
+
 
 // ========== CONTROLE DE ESTADO E DISPLAY ==========
 void atualizar_leds() {
@@ -296,6 +320,7 @@ bool montar_sd() {
     if (pSD) {
         pSD->mounted = true;
         sd_montado = true;
+        find_next_recording_id(); // Novo: Encontra o próximo ID de gravação ao montar o SD
         return true;
     }
     return false;
@@ -326,16 +351,13 @@ bool desmontar_sd() {
 bool criar_arquivo_csv() {
     FIL file;
     
-    // Gera nome do arquivo com timestamp e armazena na variável global
-    datetime_t t;
-    rtc_get_datetime(&t);
-    snprintf(current_data_filename, sizeof(current_data_filename), "imu_%04d%02d%02d_%02d%02d%02d.csv", 
-             t.year, t.month, t.day, t.hour, t.min, t.sec);
+    // Usa o next_recording_id para o nome do arquivo
+    snprintf(current_data_filename, sizeof(current_data_filename), "imu_data_%lu.csv", next_recording_id);
     
     FRESULT res = f_open(&file, current_data_filename, FA_WRITE | FA_CREATE_ALWAYS);
     if (res != FR_OK) return false;
     
-    // ATUALIZADO: Novo cabeçalho CSV sem temp_c
+    // Cabeçalho CSV
     const char *header = "numero_amostra,timestamp,accel_x,accel_y,accel_z,giro_x,giro_y,giro_z\n";
     UINT bw;
     res = f_write(&file, header, strlen(header), &bw);
@@ -343,6 +365,7 @@ bool criar_arquivo_csv() {
     
     return (res == FR_OK);
 }
+
 bool gravar_dados_imu(uint32_t sample_num, int16_t accel[3], int16_t gyro[3]) {
     FIL file;
     // Usa o nome do arquivo armazenado na variável global
@@ -392,7 +415,8 @@ void processar_botoes() {
             tempo_inicio_gravacao = get_absolute_time();
             estado_atual = ESTADO_GRAVANDO;
             beep_curto();
-            criar_arquivo_csv(); // Cria o arquivo e escreve o cabeçalho
+            criar_arquivo_csv(); // Cria o arquivo com o novo ID e escreve o cabeçalho
+            next_recording_id++; // Incrementa o ID para a PRÓXIMA gravação
         } else if (estado_atual == ESTADO_GRAVANDO) {
             // Parar captura
             captura_ativa = false;
@@ -429,7 +453,7 @@ void inicializar_sistema() {
     stdio_init_all();
     sleep_ms(2000);
     
-    // Inicializa RTC
+    // Inicializa RTC (ainda usado para o timestamp interno do CSV)
     rtc_init();
     datetime_t t = {
         .year = 2024, .month = 1, .day = 1,
@@ -492,7 +516,7 @@ void inicializar_sistema() {
 int main() {
     inicializar_sistema();
     
-    int16_t accel[3], gyro[3]; // ATUALIZADO: Removido temp
+    int16_t accel[3], gyro[3];
     absolute_time_t ultimo_update_display = get_absolute_time();
     absolute_time_t ultima_leitura = get_absolute_time();
     
@@ -504,13 +528,13 @@ int main() {
         
         // Lê dados do MPU6050 a cada 50ms
         if (absolute_time_diff_us(ultima_leitura, agora) >= 50000) {
-            mpu6050_read_raw(accel, gyro); // ATUALIZADO: Removido temp
+            mpu6050_read_raw(accel, gyro);
             ultima_leitura = agora;
             
             // Se estiver gravando, salva os dados
             if (captura_ativa && sd_montado) {
                 contador_amostras++; // Incrementa o contador ANTES de gravar para que seja o número da amostra atual
-                if (gravar_dados_imu(contador_amostras, accel, gyro)) { // ATUALIZADO: Removido temp
+                if (gravar_dados_imu(contador_amostras, accel, gyro)) {
                     // Sucesso na gravação
                 } else {
                     estado_atual = ESTADO_ERRO;
