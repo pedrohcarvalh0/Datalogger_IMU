@@ -26,7 +26,7 @@ pico_sdk_init()
 add_subdirectory(lib/FatFs_SPI)
 
 add_executable(${PROJECT_NAME}
-        Cartao_FatFS_SPI.c
+        Cartao_SD_IMU.c
         hw_config.c
         lib/ssd1306.c
         )
