@@ -10,7 +10,7 @@ def plot_imu_data_single_window(file_path):
 
             ex: python plot_imu_data.py imu_data_1.csv
 
-            ou
+            ou use diretamente
 
             ex: python PlotagemDados/plot_imu_data.py PlotagemDados/imu_data_2.csv
     """

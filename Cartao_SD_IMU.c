@@ -456,7 +456,7 @@ void inicializar_sistema() {
     // Inicializa RTC (ainda usado para o timestamp interno do CSV)
     rtc_init();
     datetime_t t = {
-        .year = 2024, .month = 1, .day = 1,
+        .year = 2025, .month = 7, .day = 1,
         .dotw = 1, .hour = 0, .min = 0, .sec = 0
     };
     rtc_set_datetime(&t);
