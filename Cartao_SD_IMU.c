@@ -320,7 +320,7 @@ bool montar_sd() {
     if (pSD) {
         pSD->mounted = true;
         sd_montado = true;
-        find_next_recording_id(); // Novo: Encontra o próximo ID de gravação ao montar o SD
+        find_next_recording_id(); // Encontra o próximo ID de gravação ao montar o SD
         return true;
     }
     return false;
@@ -376,7 +376,7 @@ bool gravar_dados_imu(uint32_t sample_num, int16_t accel[3], int16_t gyro[3]) {
     char buffer[128];
     uint32_t timestamp = to_ms_since_boot(get_absolute_time());
     snprintf(buffer, sizeof(buffer), "%lu,%lu,%d,%d,%d,%d,%d,%d\n",
-             sample_num, timestamp, accel[0], accel[1], accel[2], 
+             sample_num, timestamp, accel[0], accel[1], accel[2],
              gyro[0], gyro[1], gyro[2]);
     
     UINT bw;
@@ -453,7 +453,7 @@ void inicializar_sistema() {
     stdio_init_all();
     sleep_ms(2000);
     
-    // Inicializa RTC (ainda usado para o timestamp interno do CSV)
+    // Inicializa RTC (usado para o timestamp interno do CSV)
     rtc_init();
     datetime_t t = {
         .year = 2025, .month = 7, .day = 1,
